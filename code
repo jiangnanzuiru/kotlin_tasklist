@@ -1,0 +1,305 @@
+package tasklist
+
+import com.squareup.moshi.*
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import kotlinx.datetime.*
+import java.io.File
+import java.lang.IllegalArgumentException
+
+val fileName = "tasklist.json"
+const val HEADER = """+----+------------+-------+---+---+--------------------------------------------+
+| N  |    Date    | Time  | P | D |                   Task                     |
++----+------------+-------+---+---+--------------------------------------------+"""
+const val FOOTER = """+----+------------+-------+---+---+--------------------------------------------+"""
+
+class TaskList {
+    private val taskLists = mutableMapOf<Int, Task>()
+    private var taskNumber = 1
+
+    // Task as a data class, used to store each task, and is used in the map taskLists.
+    data class Task(var accurateTaskNumber: Int, var priority: String, var date: String, var time: String, val taskLines: MutableList<String>)
+
+    fun getTasks(): List<Task> {
+        // returned example: [Task(accurateTaskNumber=1, priority=c, date=1999-09-09, time=09:09, taskLines=[ofdasijfoasdjp, fdsajfoisadjo, asdfjoij, asdffdsj]), Task(accurateTaskNumber=2, priority=h, date=1999-09-09, time=01:01, taskLines=[oifjasdfsdafjo, asdfojidsa, jaofsji, jio])]
+        // It's a list of Task(s)
+        return taskLists.values.toList()
+    }
+
+    private fun priorityEntry(): String {
+        var priority: String
+        do {
+            println("Input the task priority (C, H, N, L):")
+            priority = readln()
+        } while(priority.lowercase() !in setOf("c", "h", "n", "l"))
+        return priority
+    }
+
+    private fun dateEntry(): String {
+        var date = ""
+        var correctDate = false
+        do {
+            println("Input the date (yyyy-mm-dd):")
+            try {
+                date = readln().split("-").map { it.toInt() }.let { LocalDate(it[0], it[1], it[2]) }.toString()
+                correctDate = true
+            } catch (e: IllegalArgumentException) {
+                println("The input date is invalid")
+            }
+        } while (!correctDate)
+        return date
+    }
+
+    private fun timeEntry(date: String): String {
+        var time: String
+        var correctDateTime = false
+        do {
+            println("Input the time (hh:mm):")
+            time = readln()
+            try {
+                val parts = time.split(":")
+                val dateParts = date.split("-")
+                val localDateTime = LocalDateTime(dateParts[0].toInt(), dateParts[1].toInt(), dateParts[2].toInt(), parts[0].toInt(), parts[1].toInt())
+                time = localDateTime.toString().split("T")[1]
+                correctDateTime = true
+            } catch (e: IllegalArgumentException) {
+                println("The input time is invalid")
+            }
+        } while (!correctDateTime)
+        return time
+    }
+
+
+    fun addTasks() {
+        var currentTask = ""
+
+        val priority = priorityEntry()
+        val date = dateEntry()
+        val time = timeEntry(date)
+
+        val taskLines = mutableListOf<String>()
+        println("Input a new task (enter a blank line to end):")
+        while(true) {
+            val taskLine = readln().trim()
+            if(currentTask == "" && taskLine == "") {
+                println("The task is blank")
+                return
+            } else if (taskLine == "") {
+                taskLists[taskNumber] = Task(taskNumber, priority, date, time, taskLines)
+                taskNumber++
+                return
+            } else {
+                taskLines.add(taskLine)
+                currentTask+=taskLine
+            }
+        }
+    }
+
+    fun addTask(task: Task) {
+        taskLists[task.accurateTaskNumber] = task
+    }
+
+    fun deleteTasks() {
+        if(taskLists.isEmpty()) {
+            println("No tasks have been input")
+            return
+        }
+        printTasks()
+        var taskToDelete: Int
+        do {
+            println("Input the task number (1-${taskLists.size}):")
+            taskToDelete = readln().toIntOrNull() ?: 0
+            if(taskToDelete !in 1..taskLists.size) {
+                println("Invalid task number")
+            }
+        } while (taskToDelete !in 1..taskLists.size)
+
+        // key will be messed up post-delete with holes
+        var keyToDelete = -1
+        for ((key, value) in taskLists) {
+            if(value.accurateTaskNumber == taskToDelete) {
+                keyToDelete = key
+            }
+        }
+        taskLists.remove(keyToDelete)
+        println("The task is deleted")
+
+        // re-arrange task numbering after each deletion!
+        var numbering = 1
+        for((key) in taskLists.toSortedMap()) {
+            taskLists[key]!!.accurateTaskNumber = numbering
+            numbering++
+        }
+        taskNumber--
+    }
+
+    fun editTasks() {
+        if(taskLists.isEmpty()) {
+            println("No tasks have been input")
+            return
+        }
+        printTasks()
+
+        var taskToEdit: Int
+        do {
+            println("Input the task number (1-${taskLists.size}):")
+            taskToEdit = readln().toIntOrNull() ?: 0
+            if(taskToEdit !in 1..taskLists.size) {
+                println("Invalid task number")
+            }
+        } while (taskToEdit !in 1..taskLists.size)
+
+        val task = taskLists[taskToEdit] ?: return
+
+        var field: String
+        do {
+            println("Input a field to edit (priority, date, time, task):")
+            field = readln().lowercase()
+            if (field !in setOf("priority", "date", "time", "task")) {
+                println("Invalid field")
+            }
+        } while (field !in setOf("priority", "date", "time", "task"))
+
+        when(field) {
+            "priority" -> task.priority = priorityEntry()
+            "date" -> task.date = dateEntry()
+            "time" -> task.time = timeEntry(task.date)
+            "task" -> {
+                task.taskLines.clear()
+                var taskLines = ""
+                println("Input a new task (enter a blank line to end):")
+                while (true) {
+                    val taskLine = readln().trim()
+                    if(taskLines == "" && taskLine == "") {
+                        return
+                    } else if (taskLine == "") {
+                        println("The task is changed")
+                        return
+                    } else {
+                        taskLines+=taskLine
+                        task.taskLines.add(taskLine)
+                    }
+                }
+            }
+        }
+        println("The task is changed")
+    }
+
+
+    fun printTasks() {
+        if (taskLists.isEmpty() && !File(fileName).exists()) {
+            println("No tasks have been input")
+        } else {
+            println(HEADER)
+            var counter = 1
+            for((key, value) in taskLists.toSortedMap()) {
+
+                val currentDate = Clock.System.now().toLocalDateTime(TimeZone.of("UTC+0")).date
+                val numberOfDays = currentDate.daysUntil(LocalDate.parse(value.date))
+                val dueTag = when {
+                    numberOfDays == 0 -> " \u001B[103m \u001B[0m "  // T
+                    numberOfDays > 0 -> " \u001B[102m \u001B[0m "   // I
+                    else -> " \u001B[101m \u001B[0m "               // O
+                }
+
+                val priorityTag = when {
+                    value.priority.lowercase() == "c" -> " \u001B[101m \u001B[0m "
+                    value.priority.lowercase() == "h" -> " \u001B[103m \u001B[0m "
+                    value.priority.lowercase() == "n" -> " \u001B[102m \u001B[0m "
+                    else -> " \u001B[104m \u001B[0m "
+                }
+
+                // for each task in taskLines, if it's over 44 characters, split into mini task, each containing 44 (or remaining) chars.
+                // for each task in taskLine that's not over 44 characters, remain as is.
+                val taskLinesFormatted = mutableListOf<String>()
+                for(task in value.taskLines) {
+                    if (task.length > 44) {
+                        val chunkedLines = task.chunked(44).mapIndexed { index, chunk -> if(index == task.length / 44) chunk + " ".repeat(44-chunk.length) + "|" else chunk + "|" }
+
+                        taskLinesFormatted.addAll(chunkedLines)
+                    } else {
+                        val blankSpace = 44 - task.length
+                        taskLinesFormatted.add("$task${" ".repeat(blankSpace)}|")
+                    }
+                }
+
+                if (counter < 10) {
+                    print("| ${value.accurateTaskNumber}  | ${value.date} | ${value.time} |${priorityTag}|$dueTag|")
+                    println(
+                        taskLinesFormatted.joinToString("\n" +
+                                "|    |            |       |   |   |")
+                    )
+                } else {
+                    println("${value.accurateTaskNumber} ${value.date} ${value.time} ${value.priority.uppercase()} $dueTag")
+                    println("   ${value.taskLines.joinToString("\n   ")}")
+                }
+                println(FOOTER)
+                counter++
+            }
+        }
+    }
+
+}
+
+
+
+private fun loadTaskListFromFile(): TaskList? {
+    val moshi = Moshi.Builder()
+        .addLast(KotlinJsonAdapterFactory())
+        .build()
+    val type = Types.newParameterizedType(List::class.java, TaskList.Task::class.java)
+    val taskListAdapter: JsonAdapter<List<TaskList.Task>> = moshi.adapter(type)
+
+    val jsonFile = File(fileName)
+    if (jsonFile.exists()) {
+        val json = jsonFile.readText()
+        val taskList = taskListAdapter.fromJson(json)
+        // taskList is of type List<TaskList.Task>.
+        if (taskList != null) {
+            val loadedTaskList = TaskList()
+            for (task in taskList) {
+                // each task is represented as a JSON object
+                loadedTaskList.addTask(task)
+            }
+            return loadedTaskList
+        }
+    }
+    return null
+}
+
+
+fun main() {
+
+    val myTaskList = loadTaskListFromFile() ?: TaskList()
+
+    while (true) {
+        println("Input an action (add, print, edit, delete, end):")
+        val input = readLine()
+
+        when (input) {
+            "add" -> myTaskList.addTasks()
+            "print" -> myTaskList.printTasks()
+            "edit" -> myTaskList.editTasks()
+            "delete" -> myTaskList.deleteTasks()
+            "end" -> {
+                saveTaskListToFile(myTaskList)
+                println("Tasklist exiting!")
+                return
+            }
+            else -> println("The input action is invalid")
+        }
+    }
+}
+
+private fun saveTaskListToFile(taskList: TaskList) {
+    val moshi = Moshi.Builder()
+        .addLast(KotlinJsonAdapterFactory())
+        .build()
+    val type = Types.newParameterizedType(List::class.java, TaskList.Task::class.java)
+    // JsonAdapter takes in a List of Task(s from TaskList class).
+    val taskListAdapter: JsonAdapter<List<TaskList.Task>> = moshi.adapter(type)
+    val json = taskListAdapter.toJson(taskList.getTasks())
+    // json data example: [{"accurateTaskNumber":1,"priority":"c","date":"1999-09-09","time":"09:09","taskLines":["ofdasijfoasdjp","fdsajfoisadjo","asdfjoij","asdffdsj"]},{"accurateTaskNumber":2,"priority":"h","date":"1999-09-09","time":"01:01","taskLines":["oifjasdfsdafjo","asdfojidsa","jaofsji","jio"]}]
+    // notice that each variable is now surrounded by "", in JSON format.
+    val jsonFile = File(fileName)
+    jsonFile.writeText(json)
+}
